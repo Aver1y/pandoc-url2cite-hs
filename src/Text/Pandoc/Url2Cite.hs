@@ -22,7 +22,6 @@ import qualified Data.Map.Strict as M
 import qualified Data.Text.IO as T
 import qualified Data.Text as T
 import           Data.Default
-import qualified Data.Typeable as Ty
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
 import           Text.Pandoc.Definition
@@ -60,22 +59,17 @@ instance Default Cache where def = Cache "citation-cache.json"
 newtype LogAction = LogAction (Text -> IO ())
 instance Default LogAction where def = LogAction $ T.hPutStrLn stderr
 
-data API = forall scheme . Typeable scheme => API (R.Url scheme)
+data API = forall scheme . Typeable scheme => API { apiUrl :: R.Url scheme, apiOption :: R.Option scheme }
 instance Default API where
-  def = API $ R.https "en.wikipedia.org" R./: "api" R./: "rest_v1" R./: "data"
-              R./: "citation" R./: "bibtex"
+  def = API (R.https "en.wikipedia.org" R./: "api" R./: "rest_v1" R./: "data"
+             R./: "citation" R./: "bibtex")
+            (mempty)
 
 -- | Whether to allow citations without an accompanying url
 data AllowDangling = AllowDangling | WarnDangling | ErrDangling
   deriving (Eq, Show)
 instance Default AllowDangling where def = ErrDangling
 
-deriving instance Show API
-instance Eq API where
-  API (api1 :: R.Url scheme1) == API (api2 :: R.Url scheme2) =
-    case Ty.eqT @scheme1 @scheme2 of
-      Nothing -> False
-      Just Refl -> api1 == api2
 
 data Configuration = Configuration {
     -- | How to display links converted to references /(def: 'Normal')/
@@ -138,8 +132,8 @@ configFromMeta format meta =
   <**> fromKey "url2cite-api" api \case
     MetaString' urlStr
       | Just uri <- URI.mkURI urlStr, Just eurl <- R.useURI uri -> case eurl of
-        Left  (url, _) -> Just $ API url
-        Right (url, _) -> Just $ API url
+        Left  (url, option) -> Just $ API url option
+        Right (url, option) -> Just $ API url option
     _ -> Nothing
   <**> fromKey "url2cite-log" logAction \case
     MetaBool False -> Just $ LogAction (const pass)
@@ -260,12 +254,12 @@ getCSLForURLWithKey api key url =
   getCSLForURL api url <&> \r -> r{CSL.refId = CSL.Literal key}
 
 getCSLForURL :: API -> Text -> R.Req CSL.Reference
-getCSLForURL (API api) url =
+getCSLForURL (API api option) url =
   liftIO . fmap U.head . CSL.readBiblioString (const True) CSL.Bibtex .
   decodeUtf8 . R.responseBody
-  =<< R.req R.GET (api R./: url) R.NoReqBody R.bsResponse mempty
+  =<< R.req R.GET (api R./: url) R.NoReqBody R.bsResponse option
 
-transformAndGetCSLs :: Walkable [Inline] pandoc 
+transformAndGetCSLs :: Walkable [Inline] pandoc
   => (AllLinks, LinkOutput, LogAction, API, Cache)
   -> pandoc
   -> IO (HashSet Text, HashSet Text, pandoc, [CSL.Reference])
