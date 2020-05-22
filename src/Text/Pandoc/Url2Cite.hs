@@ -286,7 +286,7 @@ transformAndInsertCSLs ::
 transformAndInsertCSLs conf pandoc = do
   (duplicates, dangling, Pandoc meta content, csls)
     <- transformAndGetCSLs conf pandoc
-  newRefs <- 
+  newRefs <-
     refToMeta <<$>>
     case CSL.convertRefs (lookupMeta "references" meta) of
       Right existingCsls -> pure $ existingCsls <> toList csls
