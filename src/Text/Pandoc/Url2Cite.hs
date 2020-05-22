@@ -230,7 +230,7 @@ getCSLsCached api cache (LogAction log) urls = do
     Cache cachePath ->
       ifM (Dir.doesFileExist cachePath)
         do log "Found cache"
-           CSL.readBiblioFile (\key -> has (ix key) urls) cachePath
+           CSL.readBiblioFile (const True) cachePath
         do log "Cache does not exist yet"
            pure []
   let urlsNotCached =
@@ -240,14 +240,14 @@ getCSLsCached api cache (LogAction log) urls = do
     ifor urlsNotCached \citekey url -> do
       liftIO . log $ "Fetching bib entry for " <> url
       getCSLForURLWithKey api citekey url
-  let allRefs = refs <> toList missingRefs
   case cache of
     NoCache -> pure ()
     Cache cachePath -> do
       log "Creating cache"
       Dir.createDirectoryIfMissing True $ Dir.takeDirectory cachePath
-      writeFileLText cachePath $ J.encodeToLazyText allRefs
-  pure $ allRefs
+      writeFileLText cachePath . J.encodeToLazyText $ refs <> toList missingRefs
+  pure $ filter (\(CSL.refId -> CSL.Literal key) -> has (ix key) urls) refs
+         <> toList missingRefs
 
 getCSLForURLWithKey :: API -> Text -> Text -> R.Req CSL.Reference
 getCSLForURLWithKey api key url =
